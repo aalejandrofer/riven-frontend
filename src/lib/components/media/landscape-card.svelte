@@ -86,7 +86,7 @@
         </div>
 
         {#if topRight}
-            <div class="absolute top-2 z-10 flex w-full justify-end px-2">
+            <div class="pointer-events-none absolute top-2 z-10 flex w-full justify-end px-2">
                 {@render topRight()}
             </div>
         {/if}

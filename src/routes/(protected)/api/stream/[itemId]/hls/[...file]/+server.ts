@@ -19,12 +19,18 @@ export const GET: RequestHandler = async ({ params, locals, fetch, url }) => {
         "x-api-key": locals.apiKey
     };
 
+    // `duplex` is part of the fetch standard's RequestInit but is still missing from
+    // TypeScript's DOM lib (microsoft/TypeScript#53157), so it needs a widened init object.
+    // It was previously silenced with a bare `@ts-ignore`, which also hid every other typo
+    // in this object. Behaviour is unchanged: kept because undici requires `duplex` on any
+    // request it may stream, and dropping it is not worth risking on the playback path.
+    const init: RequestInit & { duplex?: "half" } = {
+        headers,
+        duplex: "half"
+    };
+
     try {
-        const response = await fetch(backendUrl, {
-            headers,
-            // @ts-ignore - Required for streaming
-            duplex: "half"
-        });
+        const response = await fetch(backendUrl, init);
 
         if (!response.ok) {
             console.error(`Backend HLS error: ${response.status} for ${file}`);

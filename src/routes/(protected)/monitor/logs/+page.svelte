@@ -31,11 +31,26 @@
         maxReconnectAttempts: logStore.maxReconnectAttempts
     });
 
+    let autoRefresh = $state(true);
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
     onMount(() => {
         logStore.connect();
+        pollTimer = setInterval(() => {
+            if (!autoRefresh) return;
+            if (logStore.activeTab === "historical") {
+                logStore.fetchHistoricalLogs();
+            } else if (
+                logStore.connectionStatus === "error" ||
+                logStore.connectionStatus === "disconnected"
+            ) {
+                logStore.reconnect();
+            }
+        }, 3000);
     });
 
     onDestroy(() => {
+        if (pollTimer) clearInterval(pollTimer);
         logStore.disconnect();
     });
 
@@ -93,7 +108,7 @@
 </script>
 
 <svelte:head>
-    <title>Logs - Riven</title>
+    <title>Monitor · Logs - Riven</title>
 </svelte:head>
 
 {#snippet logEntry(log: LogEntry)}
@@ -164,7 +179,7 @@
     </div>
 {/snippet}
 
-<PageShell class="h-full">
+<PageShell class="mt-0 h-full md:mt-4">
     {#if error && connectionStatus === "error" && reconnectAttempts >= maxReconnectAttempts}
         <div class="bg-destructive/10 border-destructive/20 rounded-lg border p-6">
             <h3 class="text-destructive mb-3 text-lg font-semibold">Connection Failed</h3>
@@ -184,6 +199,11 @@
                     <p class="text-muted-foreground mt-1">System monitoring and logs</p>
                 </div>
                 <div class="flex items-center gap-4">
+                    <Button
+                        variant={autoRefresh ? "default" : "secondary"}
+                        onclick={() => (autoRefresh = !autoRefresh)}>
+                        {autoRefresh ? "Auto-refresh on" : "Auto-refresh off"}
+                    </Button>
                     <Button variant="secondary" onclick={handleUploadLogs}>Upload Logs</Button>
                     <div
                         class="bg-primary/10 text-primary border-primary/20 rounded-lg border px-4 py-2 font-medium">

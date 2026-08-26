@@ -1,88 +1,31 @@
 <script lang="ts">
-    import { getContext, onDestroy, onMount } from "svelte";
-    import { type Action } from "svelte/action";
+    import { getContext, onDestroy } from "svelte";
+    // Pure type import: `import { type Action }` is still a runtime import
+    // statement, and Vite's dep scanner cannot resolve "svelte/action" because
+    // Svelte 5 exports it as types only. `import type` is erased entirely.
+    import type { Action } from "svelte/action";
     import ListItem from "$lib/components/list-item.svelte";
     import { Button } from "$lib/components/ui/button/index.js";
     import PortraitCardSkeleton from "$lib/components/media/portrait-card-skeleton.svelte";
     import { SearchStore } from "$lib/services/search-store.svelte";
     import AnimatedToggle from "$lib/components/animated-toggle.svelte";
-    import SearchIcon from "@lucide/svelte/icons/search";
-    import Sparkles from "@lucide/svelte/icons/sparkles";
-    import Info from "@lucide/svelte/icons/info";
-    import { scale, fly } from "svelte/transition";
-    import { goto } from "$app/navigation";
+    import { scale } from "svelte/transition";
     import { resolve } from "$app/paths";
 
     let { data } = $props();
 
     const searchStore = getContext<SearchStore>("searchStore");
 
-    let currentExampleIndex = $state(0);
-    let currentHeroIndex = $state(0);
-    let showEmptyState = $derived(
-        !searchStore.rawSearchString && Object.keys(searchStore.filterParams).length === 0
-    );
     let hasResults = $derived(Array.isArray(searchStore.results) && searchStore.results.length > 0);
 
-    // Hero item derived from rotation
-    let heroItem = $derived(
-        data.heroItems && data.heroItems.length > 0 ? data.heroItems[currentHeroIndex] : null
-    );
-
-    // Ratings promise derived from hero item
-    let ratingsPromise = $derived.by(async () => {
-        const item = heroItem;
-        if (!item) return null;
-
-        const res = await fetch(`/api/ratings/${item.id}?type=${item.media_type}`);
-
-        // Race condition check: If the hero item has rotated while fetching, ignore this result
-        if (heroItem?.id !== item.id) return null;
-
-        return res.ok
-            ? (res.json() as Promise<{
-                  scores: Array<{ name: string; image?: string; score: string; url: string }>;
-              }>)
-            : null;
-    });
-
-    // Derived background image: Use hero item for empty state, first result for active search
+    // Backdrop of the first result, purely decorative. Previously this also fell
+    // back to a rotating TMDB hero for the no-query state; that landing content
+    // was removed (it duplicated the home page and its type tabs did nothing).
     let backgroundImage = $derived(
         hasResults && searchStore.results[0]
             ? (searchStore.results[0].backdrop_path ?? searchStore.results[0].poster_path)
-            : !hasResults && heroItem
-              ? (heroItem.backdrop_path ?? heroItem.poster_path)
-              : null
+            : null
     );
-
-    function handleFeelingLucky() {
-        if (!data.feelingLuckyItems?.length) return;
-        const randomItem =
-            data.feelingLuckyItems[Math.floor(Math.random() * data.feelingLuckyItems.length)];
-        const route = resolve(`/details/media/${randomItem.id}/${randomItem.media_type}`);
-        goto(route);
-    }
-
-    onMount(() => {
-        // Rotate search examples
-        const exampleInterval = setInterval(() => {
-            if (data.searchExamples?.length > 0) {
-                currentExampleIndex = (currentExampleIndex + 6) % data.searchExamples.length;
-            }
-        }, 4000);
-
-        // Rotate hero item every 8 seconds (faster for more dynamism)
-        const heroInterval = setInterval(() => {
-            if (data.heroItems?.length) {
-                currentHeroIndex = (currentHeroIndex + 1) % data.heroItems.length;
-            }
-        }, 8000);
-
-        return () => {
-            clearInterval(exampleInterval);
-            clearInterval(heroInterval);
-        };
-    });
 
     $effect.pre(() => {
         if (data.parsed) {
@@ -243,138 +186,7 @@
             {/if}
 
             <!-- Content -->
-            {#if showEmptyState}
-                <div class="relative flex flex-col gap-12 py-12 md:py-16">
-                    <!-- Hero section -->
-                    {#if heroItem}
-                        {#key heroItem.id}
-                            <div
-                                in:fly={{ y: 20, duration: 1000 }}
-                                class="flex flex-col gap-6 md:gap-8">
-                                <div class="max-w-3xl space-y-4">
-                                    <div class="flex items-center gap-4">
-                                        {#await ratingsPromise}
-                                            <div
-                                                class="h-6 w-24 animate-pulse rounded-full bg-white/10">
-                                            </div>
-                                        {:then ratings}
-                                            {#if ratings?.scores?.length}
-                                                <div class="flex items-center gap-3">
-                                                    {#each ratings.scores as score (score.name)}
-                                                        <div
-                                                            title={score.name}
-                                                            class="bg-background/50 flex items-center gap-1.5 rounded-xl border border-white/10 px-2.5 py-1 backdrop-blur-md transition-transform hover:scale-105">
-                                                            {#if score.image}
-                                                                <img
-                                                                    src="/rating-logos/{score.image}"
-                                                                    alt={score.name}
-                                                                    class="h-4 w-4 object-contain" />
-                                                            {:else}
-                                                                <span class="font-bold text-white"
-                                                                    >{score.name}</span>
-                                                            {/if}
-                                                            <span
-                                                                class="text-sm font-bold text-white"
-                                                                >{score.score}</span>
-                                                        </div>
-                                                    {/each}
-                                                </div>
-                                            {:else if heroItem.vote_average}
-                                                <div
-                                                    class="bg-background/50 flex items-center gap-1.5 rounded-xl border border-white/10 px-2.5 py-1 backdrop-blur-md">
-                                                    <span class="font-black text-[#01b4e4]"
-                                                        >TMDB</span>
-                                                    <span class="text-sm font-bold text-white">
-                                                        {heroItem.vote_average.toFixed(1)}
-                                                    </span>
-                                                </div>
-                                            {/if}
-                                        {:catch}
-                                            {#if heroItem.vote_average}
-                                                <div
-                                                    class="bg-background/50 flex items-center gap-1.5 rounded-xl border border-white/10 px-2.5 py-1 backdrop-blur-md">
-                                                    <span class="font-black text-[#01b4e4]"
-                                                        >TMDB</span>
-                                                    <span class="text-sm font-bold text-white">
-                                                        {heroItem.vote_average.toFixed(1)}
-                                                    </span>
-                                                </div>
-                                            {/if}
-                                        {/await}
-                                    </div>
-                                    <h2
-                                        class="text-foreground text-4xl font-black tracking-tight drop-shadow-lg md:text-6xl lg:text-7xl">
-                                        {heroItem.title}
-                                    </h2>
-                                    <p
-                                        class="text-muted-foreground line-clamp-3 text-lg md:text-xl md:leading-relaxed">
-                                        {heroItem.overview}
-                                    </p>
-                                    <div class="flex flex-wrap items-center gap-4 pt-2">
-                                        <Button
-                                            size="lg"
-                                            class="border-primary/50 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary rounded-xl border bg-transparent font-bold shadow-xl backdrop-blur-md"
-                                            href={`/details/media/${heroItem.id}/${heroItem.media_type}`}>
-                                            <Info class="mr-2 h-5 w-5" />
-                                            View Details
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="lg"
-                                            onclick={handleFeelingLucky}
-                                            class="border-border text-muted-foreground hover:bg-muted/10 hover:text-foreground hover:border-border/80 group rounded-xl border bg-transparent font-bold backdrop-blur-md">
-                                            <Sparkles
-                                                class="text-primary group-hover:text-primary mr-2 h-5 w-5 transition-transform duration-500 group-hover:rotate-12" />
-                                            Feeling Lucky
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        {/key}
-                    {:else}
-                        <!-- Fallback Hero (if no trending items) -->
-                        <div class="flex flex-col gap-4">
-                            <h2
-                                class="text-foreground text-4xl font-bold tracking-tight drop-shadow-sm md:text-5xl lg:text-6xl">
-                                What would you like to watch?
-                            </h2>
-                            <p class="text-muted-foreground text-lg md:text-xl">
-                                Search our entire library
-                            </p>
-                        </div>
-                    {/if}
-
-                    <!-- Search suggestions -->
-                    <div class="flex flex-col gap-6 pt-8">
-                        <h3
-                            class="text-muted-foreground text-sm font-medium tracking-wider uppercase">
-                            Trending now
-                        </h3>
-                        {#key currentExampleIndex}
-                            <div class="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                {#each (data.searchExamples ?? []).slice(currentExampleIndex, currentExampleIndex + 6) as example (example)}
-                                    <button
-                                        on:click={() => {
-                                            // Dispatch event for header search input
-                                            window.dispatchEvent(
-                                                new CustomEvent("riven:search", {
-                                                    detail: { query: example }
-                                                })
-                                            );
-                                        }}
-                                        class="bg-card/50 hover:bg-accent/50 group animate-in fade-in slide-in-from-bottom-2 hover:border-border/50 flex items-center gap-3 rounded-xl border border-transparent p-3 text-left backdrop-blur-sm transition-all duration-500 hover:scale-[1.02] md:gap-4 md:p-5">
-                                        <SearchIcon
-                                            class="text-muted-foreground group-hover:text-foreground h-4 w-4 shrink-0 transition-colors duration-300 md:h-5 md:w-5" />
-                                        <span
-                                            class="text-foreground text-sm leading-tight font-medium capitalize md:text-lg"
-                                            >{example}</span>
-                                    </button>
-                                {/each}
-                            </div>
-                        {/key}
-                    </div>
-                </div>
-            {:else if hasResults}
+            {#if hasResults}
                 <div
                     class="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 2xl:grid-cols-9">
                     {#each searchStore.results as item (`${item.media_type}-${item.id}`)}

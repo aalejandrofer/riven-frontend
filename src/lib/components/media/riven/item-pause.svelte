@@ -81,8 +81,9 @@
                 {isPaused ? "Resume" : "Pause"} "{title ?? "Media Item"}"
             </AlertDialog.Title>
             <AlertDialog.Description>
-                This will send a request to Riven to {isPaused ? "resume" : "pause"} this media. You will
-                be notified when it's done.
+                {isPaused
+                    ? "Resumes processing for this item and its children."
+                    : "Stops all processing for this item and its children."}
             </AlertDialog.Description>
         </AlertDialog.Header>
         <AlertDialog.Footer>

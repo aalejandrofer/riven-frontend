@@ -3,6 +3,7 @@
     import { SvelteSet, SvelteURLSearchParams } from "svelte/reactivity";
     import { invalidateAll } from "$app/navigation";
     import providers from "$lib/providers";
+    import { describeApiError } from "$lib/utils/api-error";
     import type { components, operations } from "$lib/providers/riven";
     import {
         type Stream,
@@ -647,9 +648,7 @@
                 })
                 .then(({ error: err }) => {
                     if (err) {
-                        // @ts-ignore
-                        const errorMsg = err.message || err.detail || "Failed to start auto scrape";
-                        toast.error(errorMsg);
+                        toast.error(describeApiError(err, "Failed to start auto scrape"));
                     }
                 })
                 .catch((e) => {
@@ -772,11 +771,9 @@
         });
 
         if (customTitle) {
-            // @ts-ignore
             params.set("custom_title", customTitle);
         }
         if (customImdbId) {
-            // @ts-ignore
             params.set("custom_imdb_id", customImdbId);
         }
 

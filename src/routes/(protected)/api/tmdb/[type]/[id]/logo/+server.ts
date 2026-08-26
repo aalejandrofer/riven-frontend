@@ -2,6 +2,35 @@ import { json } from "@sveltejs/kit";
 import providers from "$lib/providers";
 import { TMDB_IMAGE_BASE_URL } from "$lib/providers";
 import type { RequestHandler } from "./$types";
+import type { operations } from "$lib/providers/tmdb";
+
+type JsonBody<O extends keyof operations> =
+    operations[O]["responses"][200]["content"]["application/json"];
+
+/**
+ * The generated TMDB spec does not model `append_to_response` sub-resources on the
+ * details operations, so compose them from the standalone operations that DO model
+ * them. Every appended key is optional: TMDB omits it when it has nothing to append.
+ */
+type MovieDetailsWithAppends = JsonBody<"movie-details"> & {
+    images?: Pick<JsonBody<"movie-images">, "logos">;
+    release_dates?: Pick<JsonBody<"movie-release-dates">, "results">;
+};
+
+type SeriesDetailsWithAppends = JsonBody<"tv-series-details"> & {
+    images?: Pick<JsonBody<"tv-series-images">, "logos">;
+    content_ratings?: Pick<JsonBody<"tv-series-content-ratings">, "results">;
+};
+
+/** Movie and series logo entries are structurally identical in the spec. */
+type TMDBLogos = NonNullable<JsonBody<"movie-images">["logos"]>;
+
+function pickLogoUrl(logos: TMDBLogos | undefined): string | null {
+    const chosen = logos?.find((logo) => logo.iso_639_1 === "en") ?? logos?.[0];
+    // `file_path` is optional in the spec — without this guard a logo entry that
+    // carries none would build the URL ".../w500undefined".
+    return chosen?.file_path ? `${TMDB_IMAGE_BASE_URL}/w500${chosen.file_path}` : null;
+}
 
 export const GET: RequestHandler = async ({ params, fetch }) => {
     const { type, id } = params;
@@ -11,27 +40,34 @@ export const GET: RequestHandler = async ({ params, fetch }) => {
     }
 
     try {
-        let endpoint = "";
-        let pathParams = {};
-        let appendToResponse = "images";
-
         if (type === "movie") {
-            endpoint = "/3/movie/{movie_id}";
-            pathParams = { movie_id: Number(id) };
-            appendToResponse = "images,release_dates";
-        } else {
-            endpoint = "/3/tv/{series_id}";
-            pathParams = { series_id: Number(id) };
-            appendToResponse = "images,content_ratings";
+            const { data, error } = await providers.tmdb.GET("/3/movie/{movie_id}", {
+                fetch,
+                params: {
+                    path: { movie_id: Number(id) },
+                    query: { append_to_response: "images,release_dates" }
+                }
+            });
+
+            if (error || !data) {
+                return json({ logo: null, certification: null });
+            }
+
+            const movie = data as MovieDetailsWithAppends;
+            const usRelease = movie.release_dates?.results?.find((r) => r.iso_3166_1 === "US");
+            // `release_dates` on a country entry is optional — the old code indexed it
+            // unconditionally and would throw on a US entry that carries no dates.
+            const certification =
+                usRelease?.release_dates?.find((d) => d.certification)?.certification ?? null;
+
+            return json({ logo: pickLogoUrl(movie.images?.logos), certification });
         }
 
-        const { data, error } = await providers.tmdb.GET(endpoint as any, {
+        const { data, error } = await providers.tmdb.GET("/3/tv/{series_id}", {
             fetch,
             params: {
-                path: pathParams,
-                query: {
-                    append_to_response: appendToResponse
-                }
+                path: { series_id: Number(id) },
+                query: { append_to_response: "images,content_ratings" }
             }
         });
 
@@ -39,37 +75,13 @@ export const GET: RequestHandler = async ({ params, fetch }) => {
             return json({ logo: null, certification: null });
         }
 
-        // --- Logo Logic ---
-        // @ts-ignore
-        const logos = data.images?.logos || [];
-        // @ts-ignore
-        const englishLogo = logos.find((logo) => logo.iso_639_1 === "en");
-        // @ts-ignore
-        const chosenLogo = englishLogo || logos[0];
-        const logoUrl = chosenLogo ? `${TMDB_IMAGE_BASE_URL}/w500${chosenLogo.file_path}` : null;
+        const series = data as SeriesDetailsWithAppends;
+        const usRating = series.content_ratings?.results?.find((r) => r.iso_3166_1 === "US");
 
-        // --- Certification Logic ---
-        let certification = null;
-
-        if (type === "movie") {
-            // @ts-ignore
-            const releaseDates = data.release_dates?.results || [];
-            // @ts-ignore
-            const usRelease = releaseDates.find((r) => r.iso_3166_1 === "US");
-            if (usRelease) {
-                // @ts-ignore
-                const cert = usRelease.release_dates.find((d) => d.certification);
-                certification = cert ? cert.certification : null;
-            }
-        } else {
-            // @ts-ignore
-            const contentRatings = data.content_ratings?.results || [];
-            // @ts-ignore
-            const usRating = contentRatings.find((r) => r.iso_3166_1 === "US");
-            certification = usRating ? usRating.rating : null;
-        }
-
-        return json({ logo: logoUrl, certification });
+        return json({
+            logo: pickLogoUrl(series.images?.logos),
+            certification: usRating?.rating ?? null
+        });
     } catch (e) {
         console.error("Error fetching logo:", e);
         return json({ logo: null }, { status: 500 });

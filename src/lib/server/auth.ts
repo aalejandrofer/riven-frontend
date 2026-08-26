@@ -47,7 +47,11 @@ export const auth = betterAuth({
         disableSignUp: env.ENABLE_EMAIL_PASSWORD_SIGNUP !== "true"
     },
     socialProviders: {},
-    trustedOrigins: ["http://localhost:5173", "http://192.168.1.*:5173", env.ORIGIN].filter(
+    trustedOrigins: [
+        "http://localhost:5173",
+        "http://192.168.1.*:5173",
+        env.ORIGIN
+    ].filter(
         Boolean
     ) as string[],
     plugins: [

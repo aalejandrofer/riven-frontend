@@ -85,7 +85,7 @@
     <!-- Top Right Slot -->
     {#if topRight}
         <div
-            class="absolute top-3 right-3 z-20 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1">
+            class="pointer-events-none absolute top-3 right-3 z-20 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1">
             {@render topRight()}
         </div>
     {/if}

@@ -24,8 +24,10 @@
     import PortraitCard from "$lib/components/media/portrait-card.svelte";
     import ItemRequest from "$lib/components/media/riven/item-request.svelte";
     import ItemDelete from "$lib/components/media/riven/item-delete.svelte";
+    import ItemExclude from "$lib/components/media/riven/item-exclude.svelte";
+    import ItemBlocklistHash from "$lib/components/media/riven/item-blocklist-hash.svelte";
+    import ItemUnexclude from "$lib/components/media/riven/item-unexclude.svelte";
     import ItemPause from "$lib/components/media/riven/item-pause.svelte";
-    import ItemReset from "$lib/components/media/riven/item-reset.svelte";
     import ItemRetry from "$lib/components/media/riven/item-retry.svelte";
     import ItemManualScrape from "$lib/components/media/riven/item-manual-scrape.svelte";
     import CollectionSheet from "$lib/components/media/collection-sheet.svelte";
@@ -149,7 +151,8 @@
             data.mediaDetails?.details.formatted_runtime,
             data.mediaDetails?.details.original_language?.toUpperCase(),
             data.mediaDetails?.details.certification,
-            data.mediaDetails?.details.status
+            data.mediaDetails?.details.status,
+            data.riven?.requested_by
         ].filter(Boolean)
     );
 </script>
@@ -207,9 +210,20 @@
         overview={episode.overview}
         class="h-full transition-transform duration-300 group-hover:scale-[1.01] group-hover:shadow-lg">
         {#snippet topRight()}
-            {#if rivenEpisode?.state}
-                <StatusBadge state={rivenEpisode.state} />
-            {/if}
+            <div class="relative">
+                {#if rivenEpisode?.state}
+                    <div class="pointer-events-none transition-opacity duration-200 group-hover:opacity-0">
+                        <StatusBadge state={rivenEpisode.state} />
+                    </div>
+                {/if}
+                <!-- Actions deliberately NOT here: this card renders inside the
+                     Sheet/Drawer trigger, which is a <button>, and a <button>
+                     inside a <button> is invalid HTML. During SSR the parser
+                     lifts the inner one out and every following episode is
+                     orphaned to body level, which shredded the page on any hard
+                     refresh while client-side navigation looked fine. Rendered
+                     as a sibling of the trigger instead - see episodeCardActions. -->
+            </div>
         {/snippet}
         {#snippet meta()}
             <span
@@ -224,6 +238,39 @@
     </LandscapeCard>
 {/snippet}
 
+{#snippet episodeCardActions(episode: any, rivenEpisode: any)}
+    {#if rivenEpisode?.id && rivenEpisode?.state !== "Unreleased"}
+        {@const epTitle = `S${episode.seasonNumber ?? ""}E${episode.number ?? ""} ${episode.name ?? ""}`}
+        <div
+            class="absolute top-2 right-2 z-30 flex gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            {#if rivenEpisode?.state !== "Completed"}
+                <ItemRetry
+                    title={epTitle}
+                    ids={[rivenEpisode.id.toString()]}
+                    size="icon-sm"
+                    variant="secondary"
+                    description="Re-scrapes this episode."
+                    aria-label={`Retry ${epTitle}`}
+                    class="h-7 w-7 shadow-lg">
+                    <RefreshCw class="h-3.5 w-3.5" />
+                </ItemRetry>
+            {/if}
+            <ItemDelete
+                title={epTitle}
+                ids={[rivenEpisode.id.toString()]}
+                size="icon-sm"
+                variant="destructive"
+                aria-label={`Delete ${epTitle}`}
+                description={rivenEpisode?.media_metadata?.filename
+                    ? "Removes this file."
+                    : "Removes this request."}
+                class="h-7 w-7 shadow-lg">
+                <Trash2 class="h-3.5 w-3.5" />
+            </ItemDelete>
+        </div>
+    {/if}
+{/snippet}
+
 {#snippet episodeMetadata(episode: any, rivenEpisode: any)}
     <div class="mt-2 flex flex-wrap items-center gap-2">
         <span class="text-muted-foreground font-serif text-sm"
@@ -236,25 +283,60 @@
             >{/if}
         {#if rivenEpisode}<StatusBadge class="text-xs" state={rivenEpisode.state} />{/if}
     </div>
+    {#if rivenEpisode?.id}
+        {@const epTitle = `S${episode.seasonNumber ?? ""}E${episode.number ?? ""} ${episode.name ?? ""}`}
+        {@const epIds = [rivenEpisode.id.toString()]}
+        <!-- Episodes get Retry + Delete; Request has no episode-level endpoint
+             (AutoScrapeRequest only takes season_numbers) and title blocklisting
+             has nowhere to go (excluded_items holds only shows/movies). Blocklist
+             infohash is file-scoped, so it appears only once there is a file. -->
+        <div class="mt-3 flex flex-wrap gap-2">
+            {#if rivenEpisode?.state !== "Completed" && rivenEpisode?.state !== "Unreleased"}
+                <ItemRetry
+                    title={epTitle}
+                    ids={epIds}
+                    size="sm"
+                    variant="secondary"
+                    description="Re-scrapes this episode."
+                    class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent">
+                    <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
+                    Retry
+                </ItemRetry>
+            {/if}
+            <ItemDelete
+                title={epTitle}
+                ids={epIds}
+                size="sm"
+                variant="secondary"
+                description={rivenEpisode?.media_metadata?.filename
+                    ? "Removes this file."
+                    : "Removes this request."}
+                class="border-destructive/40 text-destructive hover:bg-destructive/10 hover:border-destructive border bg-transparent">
+                <Trash2 class="mr-1.5 h-3.5 w-3.5" />
+                Delete
+            </ItemDelete>
+            {#if rivenEpisode?.media_metadata?.filename}
+                <ItemBlocklistHash
+                    title={epTitle}
+                    itemId={rivenEpisode.id}
+                    filename={rivenEpisode.media_metadata.filename}
+                    size="sm"
+                    variant="secondary"
+                    class="border-destructive/40 text-destructive hover:bg-destructive/10 hover:border-destructive border bg-transparent">
+                    <X class="mr-1.5 h-3.5 w-3.5" />
+                    Blocklist Infohash
+                </ItemBlocklistHash>
+            {/if}
+            </div>
+    {/if}
 {/snippet}
 
 {#snippet episodeBody(episode: any, rivenEpisode: any)}
-    <div class="mt-6 flex flex-1 flex-col gap-8 overflow-y-auto px-6 pb-36">
+    <div class="mt-4 flex flex-1 flex-col gap-4 overflow-y-auto px-6 pb-36">
         {#if episode.overview}
             <p class="text-muted-foreground text-base leading-relaxed">
                 {episode.overview}
             </p>
-        {/if}
-
-        {#if episode.image}
-            <div
-                class="relative w-full max-w-[640px] overflow-hidden rounded-xl shadow-lg ring-1 ring-white/10">
-                <img
-                    alt={episode.name}
-                    class="aspect-video w-full object-cover"
-                    src={episode.image}
-                    loading="lazy" />
-            </div>
         {/if}
 
         {#if rivenEpisode?.filesystem_entry || rivenEpisode?.media_metadata}
@@ -486,86 +568,141 @@
                             {/if}
                         </div>
 
-                        <!-- Actions - Right under title -->
+                        <!-- Actions - Right under title.
+                             flex-wrap, not flex-col: the in-library branch below lays its actions
+                             out in rows and this branch must match, or a not-in-library item shows
+                             Request / Manual Scrape / Blocklist stacked in three vertical rows. -->
                         <div
                             class="flex flex-wrap items-center gap-2"
                             in:fly|global={{ y: 20, duration: 400, delay: 150, easing: cubicOut }}>
                             {#if !data.riven && data.mediaDetails?.type && data.mediaDetails?.details?.id != null}
-                                <ItemRequest
-                                    size="default"
-                                    variant="secondary"
-                                    class="border-primary/50 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary border bg-transparent px-4"
-                                    title={data.mediaDetails?.details.title}
-                                    ids={data.riven ? [data.riven.id.toString()] : []}
-                                    mediaType={data.mediaDetails?.type}
-                                    externalId={data.mediaDetails?.details?.id?.toString() ?? ""}
-                                    seasons={seasonData}>
-                                    <Download class="mr-1.5 h-4 w-4" />
-                                    Request
-                                </ItemRequest>
-                                <ItemManualScrape
-                                    size="default"
-                                    variant="secondary"
-                                    class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent px-4"
-                                    title={data.mediaDetails?.details?.title}
-                                    itemId={null}
-                                    externalId={data.mediaDetails?.details?.id?.toString() ?? ""}
-                                    mediaType={data.mediaDetails?.type ?? "movie"}
-                                    seasons={seasonData}>
-                                    <Search class="mr-1.5 h-4 w-4" />
-                                    Manual Scrape
-                                </ItemManualScrape>
-                            {:else if data.riven?.id != null}
-                                <ItemReset
-                                    size="default"
-                                    variant="secondary"
-                                    class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent px-4"
-                                    title={data.mediaDetails?.details.title}
-                                    ids={rivenId ? [rivenId.toString()] : []}>
-                                    <RotateCcw class="mr-1.5 h-4 w-4" />
-                                    Reset
-                                </ItemReset>
-                                <ItemRetry
-                                    size="default"
-                                    variant="secondary"
-                                    class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent px-4"
-                                    title={data.mediaDetails?.details.title}
-                                    ids={rivenId ? [rivenId.toString()] : []}>
-                                    <RefreshCw class="mr-1.5 h-4 w-4" />
-                                    Retry
-                                </ItemRetry>
-
-                                {#if data.mediaDetails?.type === "tv"}
+                                {#if data.isBlocklisted}
+                                    <span
+                                        class="border-destructive/40 text-destructive inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium">
+                                        <X class="h-4 w-4" />
+                                        Blocklisted
+                                    </span>
+                                    <ItemUnexclude
+                                        size="default"
+                                        variant="secondary"
+                                        class="border-primary/50 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary border bg-transparent px-4"
+                                        title={data.mediaDetails?.details.title}
+                                        mediaType={data.mediaDetails?.type === "tv" ? "show" : "movie"}
+                                        tvdbId={data.mediaDetails?.type === "tv"
+                                            ? (data.mediaDetails?.details?.id ?? null)
+                                            : (data.mediaDetails?.details?.external_ids?.tvdb ?? null)}
+                                        tmdbId={data.mediaDetails?.type === "tv"
+                                            ? (data.mediaDetails?.details?.external_ids?.tmdb ?? null)
+                                            : (data.mediaDetails?.details?.id ?? null)}
+                                        imdbId={data.mediaDetails?.details?.imdb_id ?? null}
+                                        ids={[]}>
+                                        <RotateCcw class="mr-1.5 h-4 w-4" />
+                                        Remove from Blocklist
+                                    </ItemUnexclude>
+                                {:else}
                                     <ItemRequest
+                                        size="default"
+                                        variant="secondary"
+                                        class="border-primary/50 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary border bg-transparent px-4"
+                                        title={data.mediaDetails?.details.title}
+                                        ids={data.riven ? [data.riven.id.toString()] : []}
+                                        mediaType={data.mediaDetails?.type}
+                                        externalId={(data.mediaDetails?.type === "tv"
+                                            ? (data.mediaDetails?.details?.external_ids?.tvdb ??
+                                              data.mediaDetails?.details?.id)
+                                            : data.mediaDetails?.details?.id
+                                        )?.toString() ?? ""}
+                                        seasons={seasonData}>
+                                        <Download class="mr-1.5 h-4 w-4" />
+                                        Request
+                                    </ItemRequest>
+                                    <ItemManualScrape
+                                        size="default"
+                                        variant="secondary"
+                                        class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent px-4"
+                                        title={data.mediaDetails?.details?.title}
+                                        itemId={null}
+                                        externalId={data.mediaDetails?.details?.id?.toString() ?? ""}
+                                        mediaType={data.mediaDetails?.type ?? "movie"}
+                                        seasons={seasonData}>
+                                        <Search class="mr-1.5 h-4 w-4" />
+                                        Manual Scrape
+                                    </ItemManualScrape>
+                                    <ItemExclude
+                                        size="default"
+                                        variant="secondary"
+                                        class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive border bg-transparent px-4"
+                                        title={data.mediaDetails?.details.title}
+                                        mediaType={data.mediaDetails?.type === "tv" ? "show" : "movie"}
+                                        tvdbId={data.mediaDetails?.type === "tv"
+                                            ? (data.mediaDetails?.details?.id ?? null)
+                                            : (data.mediaDetails?.details?.external_ids?.tvdb ?? null)}
+                                        tmdbId={data.mediaDetails?.type === "tv"
+                                            ? (data.mediaDetails?.details?.external_ids?.tmdb ?? null)
+                                            : (data.mediaDetails?.details?.id ?? null)}
+                                        imdbId={data.mediaDetails?.details?.imdb_id ?? null}
+                                        ids={[]}>
+                                        <X class="mr-1.5 h-4 w-4" />
+                                        Blocklist
+                                    </ItemExclude>
+                                {/if}
+                            {:else if data.riven?.id != null}
+                                {#if data.riven.state === "Excluded"}
+                                    <ItemUnexclude
+                                        size="default"
+                                        variant="secondary"
+                                        class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive border bg-transparent px-4"
+                                        title={data.mediaDetails?.details.title}
+                                        mediaType={mediaType === "tv" ? "show" : "movie"}
+                                        tvdbId={data.riven?.tvdb_id}
+                                        tmdbId={data.riven?.tmdb_id}
+                                        imdbId={data.riven?.imdb_id}
+                                        ids={rivenId ? [rivenId.toString()] : []}>
+                                        <RotateCcw class="mr-1.5 h-4 w-4" />
+                                        Remove from Blocklist
+                                    </ItemUnexclude>
+                                {:else}
+
+                                <!-- Two rows. Primary actions first in a fixed order - Request, Retry,
+                                     Pause, then the two destructive ones together, Delete and Blocklist.
+                                     Manual Scrape and Raw Data are tools rather than actions, so they
+                                     drop to a second row. Each is state-gated, so a target only shows
+                                     what it can actually do. -->
+                                <div class="flex flex-wrap items-center gap-2">
+                                    {#if data.mediaDetails?.type === "tv"}
+                                        <ItemRequest
                                         size="default"
                                         variant="secondary"
                                         class="border-primary/50 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary border bg-transparent px-4"
                                         title={data.mediaDetails?.details.title}
                                         ids={rivenId ? [rivenId.toString()] : []}
                                         mediaType={data.mediaDetails?.type}
-                                        externalId={data.mediaDetails?.details?.id?.toString() ??
-                                            ""}
+                                        externalId={(
+                                            data.mediaDetails?.details?.external_ids?.tvdb ??
+                                            data.riven?.tvdb_id ??
+                                            data.mediaDetails?.details?.id
+                                        )?.toString() ?? ""}
                                         seasons={seasonData}>
                                         <Download class="mr-1.5 h-4 w-4" />
                                         Request More
                                     </ItemRequest>
-                                {/if}
+                                    {/if}
 
-                                <ItemManualScrape
-                                    size="default"
-                                    variant="secondary"
-                                    class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent px-4"
-                                    title={data.mediaDetails?.details?.title}
-                                    itemId={rivenId?.toString() ?? null}
-                                    externalId={data.mediaDetails?.details?.id?.toString() ?? ""}
-                                    mediaType={data.mediaDetails?.type ?? "movie"}
-                                    seasons={seasonData}>
-                                    <Search class="mr-1.5 h-4 w-4" />
-                                    Manual Scrape
-                                </ItemManualScrape>
+                                    {#if data.riven.state !== "Completed"}
+                                        <ItemRetry
+                                        size="default"
+                                        variant="secondary"
+                                        description="Re-scrapes everything not yet completed. Files you already have are left alone."
+                                        class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent px-4"
+                                        title={data.mediaDetails?.details.title}
+                                        ids={rivenId ? [rivenId.toString()] : []}>
+                                        <RefreshCw class="mr-1.5 h-4 w-4" />
+                                        Retry
+                                    </ItemRetry>
+                                    {/if}
 
-                                {#if data.riven.state !== "Completed"}
-                                    <ItemPause
+                                    {#if data.riven.state !== "Completed"}
+                                        <ItemPause
                                         size="default"
                                         variant="secondary"
                                         class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent px-4"
@@ -578,9 +715,9 @@
                                             <Pause class="mr-1.5 h-4 w-4" /> Pause
                                         {/if}
                                     </ItemPause>
-                                {/if}
+                                    {/if}
 
-                                <ItemDelete
+                                    <ItemDelete
                                     size="default"
                                     variant="secondary"
                                     class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive border bg-transparent px-4"
@@ -589,6 +726,42 @@
                                     <Trash2 class="mr-1.5 h-4 w-4" />
                                     Delete
                                 </ItemDelete>
+
+                                    <ItemExclude
+                                    size="default"
+                                    variant="secondary"
+                                    class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive border bg-transparent px-4"
+                                    title={data.mediaDetails?.details.title}
+                                    mediaType={mediaType === "tv" ? "show" : "movie"}
+                                    tvdbId={data.riven?.tvdb_id}
+                                    tmdbId={data.riven?.tmdb_id}
+                                    imdbId={data.riven?.imdb_id}
+                                    ids={rivenId ? [rivenId.toString()] : []}>
+                                    <X class="mr-1.5 h-4 w-4" />
+                                    Blocklist
+                                </ItemExclude>
+                                </div>
+
+                                {/if}
+
+                                <!-- Second row: tools rather than actions. Lives outside the
+                                     Excluded/else split so Raw Data is always reachable, with
+                                     Manual Scrape gated on the item being in the library. -->
+                                <div class="flex flex-wrap items-center gap-2">
+                                    {#if data.riven?.id != null && data.riven.state !== "Excluded"}
+                                        <ItemManualScrape
+                                    size="default"
+                                    variant="secondary"
+                                    class="border-border text-muted-foreground hover:bg-muted hover:text-foreground border bg-transparent px-4"
+                                    title={data.mediaDetails?.details?.title}
+                                    itemId={rivenId?.toString() ?? null}
+                                    externalId={data.mediaDetails?.details?.id?.toString() ?? ""}
+                                    mediaType={data.mediaDetails?.type ?? "movie"}
+                                    seasons={seasonData}>
+                                    <Search class="mr-1.5 h-4 w-4" />
+                                    Manual Scrape
+                                </ItemManualScrape>
+                                    {/if}
 
                                 <Dialog.Root>
                                     <Dialog.Trigger>
@@ -627,6 +800,7 @@
                                             }}>Copy JSON</Button>
                                     </Dialog.Content>
                                 </Dialog.Root>
+                                </div>
                             {/if}
                         </div>
 
@@ -756,11 +930,16 @@
                                         (s) => s.season_number === season.number
                                     )}
                                     <Carousel.Item class="basis-auto">
+                                        <!-- Same rule as the episode grid: the card is a
+                                             <button>, so its actions cannot live inside
+                                             it. Wrapper owns `group` and `relative`; the
+                                             actions render after the button. -->
+                                        <div class="group relative">
                                         <button
                                             onclick={() =>
                                                 (selectedSeason = season.number?.toString())}
                                             class={cn(
-                                                "group relative block transition-all",
+                                                "block transition-all",
                                                 selectedSeason === season.number?.toString()
                                                     ? ""
                                                     : "opacity-60 hover:opacity-90"
@@ -775,13 +954,47 @@
                                                 class="w-28 md:w-32 lg:w-36">
                                                 {#snippet topRight()}
                                                     {#if rivenSeason?.state}
-                                                        <StatusBadge
-                                                            state={rivenSeason.state}
-                                                            size="default" />
+                                                        <div
+                                                            class="pointer-events-none transition-opacity duration-200 group-hover:opacity-0">
+                                                            <StatusBadge
+                                                                state={rivenSeason.state}
+                                                                size="default" />
+                                                        </div>
                                                     {/if}
                                                 {/snippet}
                                             </PortraitCard>
                                         </button>
+                                        <!-- Seasons: Retry + Delete. No Pause by choice,
+                                             no title blocklist because excluded_items has
+                                             no season key. -->
+                                        {#if rivenSeason?.id}
+                                            <div
+                                                class="absolute top-2 right-2 z-30 flex gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                                                {#if rivenSeason?.state !== "Completed"}
+                                                    <ItemRetry
+                                                        title={`Season ${season.number}`}
+                                                        ids={[rivenSeason.id.toString()]}
+                                                        size="icon-sm"
+                                                        variant="secondary"
+                                                        aria-label={`Retry season ${season.number}`}
+                                                        description="Re-scrapes any episode in this season that is not yet completed."
+                                                        class="h-7 w-7 shadow-lg">
+                                                        <RefreshCw class="h-3.5 w-3.5" />
+                                                    </ItemRetry>
+                                                {/if}
+                                                <ItemDelete
+                                                    title={`Season ${season.number}`}
+                                                    ids={[rivenSeason.id.toString()]}
+                                                    size="icon-sm"
+                                                    variant="destructive"
+                                                    aria-label={`Delete season ${season.number}`}
+                                                    description="Removes this season and any files it has."
+                                                    class="h-7 w-7 shadow-lg">
+                                                    <Trash2 class="h-3.5 w-3.5" />
+                                                </ItemDelete>
+                                            </div>
+                                        {/if}
+                                        </div>
                                     </Carousel.Item>
                                 {/each}
                             </Carousel.Content>
@@ -806,9 +1019,12 @@
 
                                 {#if isMobile.current}
                                     <Drawer.Root direction="bottom">
-                                        <Drawer.Trigger class="group w-full text-left">
-                                            {@render episodeTrigger(episode, rivenEpisode)}
-                                        </Drawer.Trigger>
+                                        <div class="group relative">
+                                            <Drawer.Trigger class="w-full text-left">
+                                                {@render episodeTrigger(episode, rivenEpisode)}
+                                            </Drawer.Trigger>
+                                            {@render episodeCardActions(episode, rivenEpisode)}
+                                        </div>
                                         <Drawer.Content class="max-h-[85vh] outline-none">
                                             <div class="mx-auto w-full max-w-4xl px-4 pb-6 md:px-6">
                                                 <Drawer.Header class="px-0 pt-2 pb-0 text-left">
@@ -824,9 +1040,12 @@
                                     </Drawer.Root>
                                 {:else}
                                     <Sheet.Root>
-                                        <Sheet.Trigger class="group w-full text-left">
-                                            {@render episodeTrigger(episode, rivenEpisode)}
-                                        </Sheet.Trigger>
+                                        <div class="group relative">
+                                            <Sheet.Trigger class="w-full text-left">
+                                                {@render episodeTrigger(episode, rivenEpisode)}
+                                            </Sheet.Trigger>
+                                            {@render episodeCardActions(episode, rivenEpisode)}
+                                        </div>
                                         <Sheet.Content
                                             side="right"
                                             class="flex w-full flex-col overflow-hidden border-l border-white/10 bg-zinc-950/95 backdrop-blur-2xl sm:max-w-xl md:max-w-2xl lg:max-w-3xl">
@@ -1018,6 +1237,18 @@
                                             <p class="text-foreground font-mono text-xs break-all">
                                                 {meta.filename}
                                             </p>
+                                            {#if rivenId}
+                                                <ItemBlocklistHash
+                                                    class="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive mt-1 w-fit border bg-transparent"
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    title={data.mediaDetails?.details.title}
+                                                    itemId={rivenId}
+                                                    filename={meta.filename}>
+                                                    <X class="mr-1.5 h-3.5 w-3.5" />
+                                                    Blocklist Infohash
+                                                </ItemBlocklistHash>
+                                            {/if}
                                         </div>
                                     {/if}
 

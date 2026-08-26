@@ -1,6 +1,7 @@
 import type { PageServerLoad } from "./$types";
 import { redirect, error } from "@sveltejs/kit";
 import { itemsSearchSchema } from "$lib/schemas/items";
+import type { ItemsQuery, ItemsQueryWithExcluded } from "$lib/schemas/items";
 import { zod4 } from "sveltekit-superforms/adapters";
 import providers from "$lib/providers";
 import { superValidate } from "sveltekit-superforms";
@@ -14,7 +15,8 @@ type ValidItemType = (typeof VALID_ITEM_TYPES)[number];
 type ItemType = ValidItemType | "unknown";
 
 interface RivenLibraryItem {
-    id: number;
+    // Riven serialises item ids as strings ("59695"), not numbers.
+    id: string;
     type: string;
     title: string;
     tmdb_id?: string | null;
@@ -87,9 +89,13 @@ export const load: PageServerLoad = async (event) => {
 
     const itemsSearchForm = await superValidate(event.url.searchParams, zod4(itemsSearchSchema));
 
+    // The form can select `Excluded`, which the generated client does not model — see
+    // ItemsQueryWithExcluded. Everything else is checked; only that one value is asserted.
+    const query: ItemsQueryWithExcluded = itemsSearchForm.data;
+
     const itemsResponse = await providers.riven.GET("/api/v1/items", {
         params: {
-            query: itemsSearchForm.data
+            query: query as ItemsQuery
         },
         baseUrl: event.locals.backendUrl,
         headers: {

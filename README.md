@@ -1,3 +1,15 @@
+# Riven Frontend: homelab fork
+
+A working fork of [rivenmedia/riven-frontend](https://github.com/rivenmedia/riven-frontend), the UI for my backend fork at [aalejandrofer/riven](https://github.com/aalejandrofer/riven). Upstream hasn't moved since 2026-03-08, so I keep this branch patched to match the backend.
+
+The changes are small UI additions: exclude and unexclude buttons on the media detail page (wired to the backend's `States.Excluded` flow), the request source shown in the item metadata line, plus a couple of auth and scrolling fixes. Run it together with the backend `homelab` branch.
+
+Worth knowing before you build off it: no CI and no support, and the branch is regenerated and force-pushed from a private repo, so only git-tracked files are published (local secrets, `.env`, and the DB never leave) and the history gets rewritten on each sync. Pin a commit if you depend on it.
+
+The upstream README is below.
+
+---
+
 <div align="center">
   <a href="https://github.com/rivenmedia/riven">
     <picture>

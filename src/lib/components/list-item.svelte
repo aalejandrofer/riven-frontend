@@ -23,6 +23,13 @@
         let t = type;
         if (indexer === "anilist" && !t) t = data.media_type;
         if ((indexer === "tvdb" || indexer === "tmdb") && t === "show") t = "tv";
+        // Seasons and episodes have no detail page of their own - the only page
+        // that can render them is their SHOW's. Without this they fell through
+        // to the generic /details/{indexer}/{type}/{id} branch and produced
+        // /details/tvdb/episode/393189, which 404s twice over: `episode` is not
+        // in the detailsMediaType route matcher, and 393189 is the SERIES tvdb
+        // id (from parent_ids), not the episode's own (10983019).
+        if (t === "season" || t === "episode") t = "tv";
         // Ensure type is set if only in data
         if (!t && data.media_type) t = data.media_type;
         return t;
@@ -32,6 +39,15 @@
         if (!data.id) return null;
         if (normalizedType === "person" || normalizedType === "company") {
             return `/details/entity/${data.id}/${normalizedType}`;
+        }
+
+        // A season/episode card must link to its parent SHOW, keyed by the
+        // parent's tvdb id. Riven stores shows as TVDB-only (0 of 1,024 shows
+        // carry a tmdb_id), so `?indexer=tvdb` is required or the details
+        // loader will try to resolve this number as a TMDB id and miss.
+        if (type === "season" || type === "episode") {
+            const parentTvdb = data.parent_ids?.tvdb_id;
+            if (parentTvdb) return `/details/media/${parentTvdb}/tv?indexer=tvdb`;
         }
 
         if (

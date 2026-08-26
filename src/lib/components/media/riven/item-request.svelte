@@ -94,7 +94,10 @@
                     open = false;
                 } else {
                     logger.error("Error response:", response.error);
-                    toast.error("Failed to request media item.");
+                    // Surface the backend detail (e.g. "season not aired yet")
+                    // instead of a generic failure toast.
+                    const detail = (response.error as { detail?: string } | undefined)?.detail;
+                    toast.error(detail ?? "Failed to request media item.");
                 }
             } else if (validIds.length > 0) {
                 // Item already exists in Riven — use /retry so it immediately
@@ -128,7 +131,8 @@
                     open = false;
                 } else {
                     logger.error("Error response:", response.error);
-                    toast.error("Failed to request media item.");
+                    const detail = (response.error as { detail?: string } | undefined)?.detail;
+                    toast.error(detail ?? "Failed to request media item.");
                 }
             }
         } catch (e) {

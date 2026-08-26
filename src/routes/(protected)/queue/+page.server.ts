@@ -1,7 +1,7 @@
 import { redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
 
-// Logs moved into the combined Monitor view.
+// Queue moved into the combined Monitor view.
 export const load: PageServerLoad = async () => {
-    redirect(308, "/monitor/logs");
+    redirect(308, "/monitor");
 };

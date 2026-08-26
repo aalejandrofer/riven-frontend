@@ -4,13 +4,73 @@ import providers from "$lib/providers";
 import * as dateUtils from "$lib/utils/date";
 import { createCustomFetch } from "$lib/custom-fetch";
 import { createScopedLogger } from "$lib/logger";
+import type { components, operations } from "$lib/providers/tvdb";
 
 const logger = createScopedLogger("tvdb-search");
 
 /**
- * Apply server-side filters to TVDB results
+ * Query parameters `GET /search` accepts, taken from the generated TVDB client so the spec
+ * stays the source of truth. This is what the old `searchParams as any` was hiding: the
+ * object was declared `Record<string, string | number>`, which is assignable to nothing the
+ * client actually wants (`year`/`limit`/`offset` are numbers, everything else is a string),
+ * so the cast was suppressing a real mismatch and with it every parameter-name check.
  */
-function applyServerFilters(items: any[], filters: Record<string, any>): any[] {
+type SearchQuery = NonNullable<operations["getSearchResults"]["parameters"]["query"]>;
+
+/**
+ * TVDB's `/search` is polymorphic across `type` (series, movie, person, company), but the
+ * generated spec models that as ONE all-optional record rather than a discriminated union,
+ * so no local union or zod guard is needed — the generated type already admits every
+ * variant, and this route only keeps `type === "series"` rows anyway.
+ */
+type TVDBSearchResult = components["schemas"]["SearchResult"];
+
+/** The shape this route hands back to the client — also what the filters run against. */
+interface TransformedResult {
+    id: string | undefined;
+    title: string;
+    poster_path: string | null;
+    media_type: "tv";
+    year: string | number;
+    vote_average: number | null;
+    vote_count: number | null;
+    overview: string | null;
+    first_air_date: string | null;
+    indexer: "tvdb";
+}
+
+/** The subset of the request's query string this route filters on locally. */
+type ClientFilters = Partial<Record<ClientFilterKey, string | number>>;
+
+const CLIENT_FILTERABLE = [
+    "vote_average.gte",
+    "vote_average.lte",
+    "vote_count.gte",
+    "vote_count.lte",
+    "air_date.gte",
+    "air_date.lte",
+    "first_air_date.gte",
+    "first_air_date.lte"
+] as const;
+
+type ClientFilterKey = (typeof CLIENT_FILTERABLE)[number];
+
+function isClientFilterKey(key: string): key is ClientFilterKey {
+    return (CLIENT_FILTERABLE as readonly string[]).includes(key);
+}
+
+/**
+ * Apply server-side filters to TVDB results.
+ *
+ * NOTE: `vote_average` and `vote_count` are hard-coded `null` in `transformResult` because
+ * TVDB search returns no ratings, so any `vote_*` filter rejects every row. Left as-is —
+ * that is existing behaviour, not something this typing pass should change — but it is why
+ * a rating filter on the TVDB indexer always comes back empty.
+ */
+function applyServerFilters(
+    items: TransformedResult[],
+    filters: ClientFilters
+): TransformedResult[] {
     if (!filters || Object.keys(filters).length === 0) {
         return items;
     }
@@ -64,6 +124,21 @@ function applyServerFilters(items: any[], filters: Record<string, any>): any[] {
     });
 }
 
+function transformResult(item: TVDBSearchResult): TransformedResult {
+    return {
+        id: item.tvdb_id,
+        title: item.translations?.eng || item.name || "Unknown",
+        poster_path: item.image_url || null,
+        media_type: "tv",
+        year: item.year || (dateUtils.getYearFromISO(item.first_air_time) ?? "N/A"),
+        vote_average: null,
+        vote_count: null,
+        overview: item.overview || null,
+        first_air_date: item.first_air_time || null,
+        indexer: "tvdb"
+    };
+}
+
 export const GET: RequestHandler = async ({ fetch, locals, url, cookies }) => {
     if (!locals.user || !locals.session) {
         error(401, "Unauthorized");
@@ -86,20 +161,10 @@ export const GET: RequestHandler = async ({ fetch, locals, url, cookies }) => {
     const offset = (page - 1) * limit;
 
     // Extract client-side filters
-    const clientFilters: Record<string, any> = {};
-    const CLIENT_FILTERABLE = new Set([
-        "vote_average.gte",
-        "vote_average.lte",
-        "vote_count.gte",
-        "vote_count.lte",
-        "air_date.gte",
-        "air_date.lte",
-        "first_air_date.gte",
-        "first_air_date.lte"
-    ]);
+    const clientFilters: ClientFilters = {};
 
     for (const [key, value] of url.searchParams) {
-        if (CLIENT_FILTERABLE.has(key)) {
+        if (isClientFilterKey(key)) {
             if (key.includes("vote_")) {
                 const numValue = Number(value);
                 if (!isNaN(numValue)) {
@@ -124,7 +189,7 @@ export const GET: RequestHandler = async ({ fetch, locals, url, cookies }) => {
 
     try {
         // Build query parameters - only include defined values
-        const searchParams: Record<string, string | number> = {
+        const searchParams: SearchQuery = {
             type: type,
             limit: limit,
             offset: offset
@@ -142,7 +207,7 @@ export const GET: RequestHandler = async ({ fetch, locals, url, cookies }) => {
         // Make search request to TVDB using the provider client
         const searchResult = await providers.tvdb.GET("/search", {
             params: {
-                query: searchParams as any
+                query: searchParams
             },
             headers: {
                 Authorization: `Bearer ${tvdbToken}`
@@ -156,19 +221,8 @@ export const GET: RequestHandler = async ({ fetch, locals, url, cookies }) => {
         }
 
         const transformedResults = (searchResult.data?.data || [])
-            .filter((item: any) => item.type === "series")
-            .map((item: any) => ({
-                id: item.tvdb_id,
-                title: item.translations?.eng || item.name || "Unknown",
-                poster_path: item.image_url || null,
-                media_type: "tv",
-                year: item.year || (dateUtils.getYearFromISO(item.first_air_time) ?? "N/A"),
-                vote_average: null,
-                vote_count: null,
-                overview: item.overview || null,
-                first_air_date: item.first_air_time || null,
-                indexer: "tvdb"
-            }));
+            .filter((item) => item.type === "series")
+            .map(transformResult);
 
         // Apply server-side filters
         const filteredResults = applyServerFilters(transformedResults, clientFilters);

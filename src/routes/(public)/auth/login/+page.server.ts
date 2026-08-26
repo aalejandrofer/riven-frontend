@@ -123,6 +123,15 @@ export const actions: Actions = {
                         image: registerForm.data.image || undefined
                     }
                 });
+
+                await auth.api.signInUsername({
+                    body: {
+                        username: registerForm.data.username,
+                        password: registerForm.data.password,
+                        callbackURL: "/"
+                    },
+                    headers: event.request.headers
+                });
             }
         } catch (error) {
             if (error instanceof APIError) {

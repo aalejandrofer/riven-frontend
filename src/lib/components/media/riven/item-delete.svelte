@@ -25,8 +25,12 @@
         size?: "default" | "sm" | "lg" | "icon" | "icon-sm" | "icon-lg" | undefined;
         class?: string;
         children?: Snippet;
+        /** Delete removes the ITEM row, so on something with no file yet it is
+            the request that goes, not a file. Call sites say which. */
+        description?: string;
     }
-    let { title, ids, variant = "ghost", size = "sm", children, ...restProps }: Props = $props();
+    let { title, ids, variant = "ghost", size = "sm", children, description = "Removes this file.",
+        ...restProps }: Props = $props();
 
     async function removeMediaItem(ids: (string | null | undefined)[]) {
         const validIds = ids.filter((id): id is string => id !== null && id !== undefined);
@@ -69,8 +73,7 @@
                 Deleting "{title ?? "Media Item"}"
             </AlertDialog.Title>
             <AlertDialog.Description>
-                This will send a request to Riven to delete this media. You will be notified when
-                it's removed.
+                {description}
             </AlertDialog.Description>
         </AlertDialog.Header>
         <AlertDialog.Footer>

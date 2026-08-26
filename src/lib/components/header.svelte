@@ -43,6 +43,26 @@
     let inputRef = $state<HTMLInputElement | null>(null);
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
+    // Hide-on-scroll: float over hero at top, slide away when scrolling down,
+    // reveal on scroll up / near top. Avoids overlapping content (e.g. /settings).
+    let headerEl = $state<HTMLElement | null>(null);
+    let scrollHidden = $state(false);
+
+    onMount(() => {
+        const scroller = headerEl?.parentElement;
+        if (!scroller) return;
+        let lastY = scroller.scrollTop;
+        const onScroll = () => {
+            const y = scroller.scrollTop;
+            if (y < 16) scrollHidden = false;
+            else if (y > lastY + 4) scrollHidden = true;
+            else if (y < lastY - 4) scrollHidden = false;
+            lastY = y;
+        };
+        scroller.addEventListener("scroll", onScroll, { passive: true });
+        return () => scroller.removeEventListener("scroll", onScroll);
+    });
+
     // Sync external URL changes to input, but avoid overwriting while typing
     // We use afterNavigate instead of $effect to avoid state loops
     afterNavigate(() => {
@@ -87,13 +107,17 @@
     function onKeydown(e: KeyboardEvent) {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
             e.preventDefault();
+            scrollHidden = false;
             inputRef?.focus();
         }
     }
 </script>
 
 <header
-    class="pointer-events-none absolute top-0 left-0 z-50 hidden h-20 w-full items-center bg-gradient-to-b from-black/50 to-transparent px-4 transition-all duration-500 md:flex md:px-16">
+    bind:this={headerEl}
+    class="pointer-events-none absolute top-0 left-0 z-50 hidden h-20 w-full items-center bg-gradient-to-b from-black/50 to-transparent px-4 transition-all duration-500 md:flex md:px-16"
+    class:-translate-y-full={scrollHidden}
+    class:opacity-0={scrollHidden}>
     <div class="pointer-events-auto flex w-full items-center justify-between gap-6">
         <div class="mx-auto w-full max-w-lg transition-all duration-300 focus-within:max-w-xl">
             <InputGroup.Root

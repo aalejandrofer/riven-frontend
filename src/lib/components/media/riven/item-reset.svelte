@@ -24,8 +24,21 @@
         size?: "default" | "sm" | "lg" | "icon" | "icon-sm" | "icon-lg" | undefined;
         class?: string;
         children?: Snippet;
+        verbGerund?: string;
+        verbImperative?: string;
+        description?: string;
     }
-    let { title, ids, variant = "ghost", size = "sm", children, ...restProps }: Props = $props();
+    let {
+        title,
+        ids,
+        variant = "ghost",
+        size = "sm",
+        children,
+        verbGerund = "Resetting",
+        verbImperative = "Reset",
+        description = "Blacklists the current pick and re-scrapes. Called on a Show or Season cascades to its children (clears their streams + blacklists too).",
+        ...restProps
+    }: Props = $props();
 
     async function resetMediaItem(ids: (string | null | undefined)[]) {
         const validIds = ids.filter((id): id is string => id !== null && id !== undefined);
@@ -51,7 +64,12 @@
 <AlertDialog.Root bind:open>
     <AlertDialog.Trigger>
         {#snippet child({ props })}
-            <Button {variant} {size} {...restProps} {...props}>
+            <Button
+                {variant}
+                {size}
+                aria-label={`Reset ${title ?? "media item"}`}
+                {...restProps}
+                {...props}>
                 {#if children}
                     {@render children()}
                 {:else}
@@ -63,11 +81,10 @@
     <AlertDialog.Content class="border border-white/10 bg-zinc-950/95 backdrop-blur-2xl">
         <AlertDialog.Header>
             <AlertDialog.Title>
-                Resetting "{title ?? "Media Item"}"
+                {verbGerund} "{title ?? "Media Item"}"
             </AlertDialog.Title>
             <AlertDialog.Description>
-                This will send a request to Riven to reset this media. You will be notified when
-                it's done.
+                {description}
             </AlertDialog.Description>
         </AlertDialog.Header>
         <AlertDialog.Footer>
@@ -83,7 +100,7 @@
                 {#if loading}
                     <Loader2 class="mr-1 inline-block animate-spin" />
                 {/if}
-                Reset
+                {verbImperative}
             </AlertDialog.Action>
         </AlertDialog.Footer>
     </AlertDialog.Content>

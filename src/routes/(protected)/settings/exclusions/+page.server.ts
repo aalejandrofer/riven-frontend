@@ -1,7 +1,7 @@
 import { redirect } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
 
-// Logs moved into the combined Monitor view.
+// Exclusions page moved to the top-level /blocklist route (Seerr-style wording).
 export const load: PageServerLoad = async () => {
-    redirect(308, "/monitor/logs");
+    redirect(308, "/blocklist");
 };

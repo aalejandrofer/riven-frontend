@@ -124,6 +124,39 @@ async function getTraktData(fetch: typeof globalThis.fetch, mediaId: string, isM
     }
 }
 
+/**
+ * Read excluded_items.shows / .movies (the blocklist) as string Sets so the
+ * detail page can show "Blocklisted" for items that are NOT in the Riven library
+ * DB (data.riven is null for those, so data.riven.state can't carry it). Matches
+ * across tvdb/tmdb/imdb so a legacy mis-namespaced entry (e.g. a tmdb id stored
+ * under shows) is still recognized.
+ */
+async function fetchExcludedSets(
+    backendUrl: string,
+    apiKey: string,
+    fetch: typeof globalThis.fetch
+): Promise<{ shows: Set<string>; movies: Set<string> }> {
+    try {
+        const resp = await fetch(
+            `${backendUrl}/api/v1/settings/get/filesystem.excluded_items`,
+            { headers: { "x-api-key": apiKey } }
+        );
+        if (!resp.ok) return { shows: new Set(), movies: new Set() };
+        const j = await resp.json();
+        const ex = j?.["filesystem.excluded_items"] ?? {};
+        return {
+            shows: new Set((Array.isArray(ex.shows) ? ex.shows : []).map(String)),
+            movies: new Set((Array.isArray(ex.movies) ? ex.movies : []).map(String))
+        };
+    } catch {
+        return { shows: new Set(), movies: new Set() };
+    }
+}
+
+function anyIn(set: Set<string>, ...ids: (string | number | null | undefined)[]): boolean {
+    return ids.some((i) => i != null && set.has(String(i)));
+}
+
 export const load = (async ({ fetch, params, cookies, locals, url }) => {
     const { id, mediaType } = params;
     const customFetch = createCustomFetch(fetch);
@@ -183,8 +216,16 @@ export const load = (async ({ fetch, params, cookies, locals, url }) => {
                 traktResult.traktRecs
             );
 
+            const excluded = await fetchExcludedSets(locals.backendUrl, locals.apiKey, fetch);
+            const isBlocklisted = anyIn(
+                excluded.movies,
+                parsedDetails?.id,
+                parsedDetails?.imdb_id
+            );
+
             return {
                 riven: rivenData?.data as RivenMediaItem | undefined,
+                isBlocklisted,
                 mediaDetails: {
                     type: "movie" as const,
                     details: parsedDetails as ParsedMovieDetails
@@ -352,8 +393,20 @@ export const load = (async ({ fetch, params, cookies, locals, url }) => {
                 traktResult.traktRecs
             );
 
+            const excluded = await fetchExcludedSets(locals.backendUrl, locals.apiKey, fetch);
+            // details.id is the resolved tvdb id; also match the tmdb/imdb forms so a
+            // legacy tmdb id stored under shows (the id-mixing bug) is still detected.
+            const isBlocklisted = anyIn(
+                excluded.shows,
+                parsedDetails?.id,
+                parsedDetails?.external_ids?.tmdb,
+                parsedDetails?.external_ids?.imdb,
+                parsedDetails?.imdb_id
+            );
+
             return {
                 riven: rivenData?.data as RivenMediaItem | undefined,
+                isBlocklisted,
                 mediaDetails: {
                     type: "tv" as const,
                     details: parsedDetails as ParsedShowDetails

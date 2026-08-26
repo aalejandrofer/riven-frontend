@@ -18,7 +18,7 @@
     import ListChecks from "@lucide/svelte/icons/list-checks";
     import * as Select from "$lib/components/ui/select/index.js";
     import { ItemStore } from "$lib/stores/library-items.svelte";
-    import { reset_items, retry_items, remove_items } from "./library.remote";
+    import { reset_items, retry_items, remove_items, fetch_all_matching_ids } from "./library.remote";
     import * as Pagination from "$lib/components/ui/pagination/index.js";
     import Loading2Circle from "@lucide/svelte/icons/loader-2";
     import { toast } from "svelte-sonner";
@@ -40,7 +40,71 @@
     const itemsStore = new ItemStore();
 
     let actionInProgress = $state(false);
+    let selectingAll = $state(false);
     let formElement: HTMLFormElement;
+
+    function selectPage() {
+        for (const item of data.items) {
+            if (!itemsStore.has(item.riven_id)) itemsStore.toggle(item.riven_id);
+        }
+    }
+
+    async function selectAllMatching() {
+        selectingAll = true;
+        try {
+            const result = await fetch_all_matching_ids({
+                search: $formData.search || undefined,
+                type: $formData.type,
+                states: $formData.states
+            });
+            for (const id of result.ids) {
+                if (!itemsStore.has(id)) itemsStore.toggle(id);
+            }
+            const msg = result.capped
+                ? `Selected first ${result.ids.length} matching (cap hit)`
+                : `Selected all ${result.ids.length} matching`;
+            toast.success(msg);
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Select-all failed");
+        } finally {
+            selectingAll = false;
+        }
+    }
+
+    // Chunk an array into batches of size n.
+    function chunk<T>(arr: T[], n: number): T[][] {
+        const out: T[][] = [];
+        for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+        return out;
+    }
+
+    async function bulkAction(
+        kind: "reset" | "retry" | "remove",
+        runner: (batch: string[]) => Promise<unknown>,
+        label: string
+    ) {
+        const ids = itemsStore.items.map((id) => id.toString());
+        if (ids.length === 0) return;
+        actionInProgress = true;
+        try {
+            const batches = chunk(ids, 50);
+            let done = 0;
+            for (const batch of batches) {
+                await runner(batch);
+                done += batch.length;
+                if (batches.length > 1) {
+                    toast.message(`${label}: ${done}/${ids.length}`);
+                }
+            }
+            toast.success(`${label} ${ids.length} items`);
+            itemsStore.clear();
+            await invalidateAll();
+        } catch (e) {
+            toast.error(e instanceof Error ? `${label} failed: ${e.message}` : "Unknown error");
+        } finally {
+            actionInProgress = false;
+        }
+    }
 
     // Live Search Logic
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -112,6 +176,28 @@
                     <span class="text-primary font-mono text-sm"
                         >{data.totalItems.toLocaleString()} items</span>
                 </div>
+                {#if data.items.length > 0}
+                    <div class="mt-2 flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onclick={selectPage}
+                            class="h-8 border-white/10 bg-zinc-900/40 text-xs hover:bg-white/5">
+                            Select page ({data.items.length})
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={selectingAll}
+                            onclick={selectAllMatching}
+                            class="h-8 border-white/10 bg-zinc-900/40 text-xs hover:bg-white/5">
+                            {#if selectingAll}
+                                <Loading2Circle class="mr-1.5 h-3 w-3 animate-spin" />
+                            {/if}
+                            Select all matching ({data.totalItems.toLocaleString()})
+                        </Button>
+                    </div>
+                {/if}
             </div>
 
             <!-- Compact Filter Bar -->
@@ -330,55 +416,19 @@
                     {/snippet}
 
                     <!-- Actions -->
-                    {@render actionButton("Reset", { component: ListChecks }, async () => {
-                        actionInProgress = true;
-                        try {
-                            await reset_items({ ids: itemsStore.items.map((id) => id.toString()) });
-                            toast.success(`Reset ${itemsStore.count} items`);
-                            itemsStore.clear();
-                            await invalidateAll();
-                        } catch (e) {
-                            if (e instanceof Error) toast.error(`Error: ${e.message}`);
-                            else toast.error("An unknown error occurred");
-                        } finally {
-                            actionInProgress = false;
-                        }
-                    })}
+                    {@render actionButton("Reset", { component: ListChecks }, () =>
+                        bulkAction("reset", (b) => reset_items({ ids: b }), "Reset")
+                    )}
 
-                    {@render actionButton("Retry", { component: Loading2Circle }, async () => {
-                        actionInProgress = true;
-                        try {
-                            await retry_items({ ids: itemsStore.items.map((id) => id.toString()) });
-                            toast.success(`Retrying ${itemsStore.count} items`);
-                            itemsStore.clear();
-                            await invalidateAll();
-                        } catch (e) {
-                            if (e instanceof Error) toast.error(`Error: ${e.message}`);
-                            else toast.error("An unknown error occurred");
-                        } finally {
-                            actionInProgress = false;
-                        }
-                    })}
+                    {@render actionButton("Retry", { component: Loading2Circle }, () =>
+                        bulkAction("retry", (b) => retry_items({ ids: b }), "Retry")
+                    )}
 
                     {@render actionButton(
                         "Remove",
                         { component: Trash },
-                        async () => {
-                            actionInProgress = true;
-                            try {
-                                await remove_items({
-                                    ids: itemsStore.items.map((id) => id.toString())
-                                });
-                                toast.success(`Removed ${itemsStore.count} items`);
-                                itemsStore.clear();
-                                await invalidateAll();
-                            } catch (e) {
-                                if (e instanceof Error) toast.error(`Error: ${e.message}`);
-                                else toast.error("An unknown error occurred");
-                            } finally {
-                                actionInProgress = false;
-                            }
-                        },
+                        () =>
+                            bulkAction("remove", (b) => remove_items({ ids: b }), "Remove"),
                         "destructive"
                     )}
 

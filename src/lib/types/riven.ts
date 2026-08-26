@@ -39,6 +39,7 @@ export interface FilesystemEntry {
 }
 
 export interface RivenEpisode {
+    id: number;
     episode_number: number;
     state: string;
     media_metadata?: MediaMetadata;
@@ -46,6 +47,7 @@ export interface RivenEpisode {
 }
 
 export interface RivenSeason {
+    id: number;
     season_number: number;
     state: string;
     episodes?: RivenEpisode[];
@@ -54,6 +56,8 @@ export interface RivenSeason {
 export interface RivenMediaItem {
     id: number;
     state: string;
+    requested_by?: string;
+    requested_at?: string;
     media_metadata?: MediaMetadata;
     filesystem_entry?: FilesystemEntry;
     seasons?: RivenSeason[];

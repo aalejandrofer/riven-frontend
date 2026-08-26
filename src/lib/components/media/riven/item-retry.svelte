@@ -24,8 +24,19 @@
         size?: "default" | "sm" | "lg" | "icon" | "icon-sm" | "icon-lg" | undefined;
         class?: string;
         children?: Snippet;
+        /** Override the confirm copy - the card action needs to say the current
+            file is dropped, which the generic wording does not convey. */
+        description?: string;
     }
-    let { title, ids, variant = "ghost", size = "sm", children, ...restProps }: Props = $props();
+    let {
+        title,
+        ids,
+        variant = "ghost",
+        size = "sm",
+        children,
+        description = "Re-scrapes anything not yet completed.",
+        ...restProps
+    }: Props = $props();
 
     async function retryMediaItem(ids: (string | null | undefined)[]) {
         const validIds = ids.filter((id): id is string => id !== null && id !== undefined);
@@ -66,8 +77,7 @@
                 Retrying "{title ?? "Media Item"}"
             </AlertDialog.Title>
             <AlertDialog.Description>
-                This will send a request to Riven to retry this media. You will be notified when
-                it's done.
+                {description}
             </AlertDialog.Description>
         </AlertDialog.Header>
         <AlertDialog.Footer>

@@ -13,6 +13,7 @@
     import { getInitials } from "$lib/utils";
     import * as Avatar from "$lib/components/ui/avatar/index.js";
     import PageShell from "$lib/components/page-shell.svelte";
+    import ThemeSwitcher from "$lib/components/theme-switcher.svelte";
 
     let { data }: PageProps = $props();
 
@@ -76,6 +77,16 @@
 
     <div class="mt-8">
         <Passkeys />
+    </div>
+
+    <div class="mt-8 flex flex-col gap-3 rounded-lg border border-white/10 p-4 md:max-w-md">
+        <div>
+            <p class="text-sm font-semibold">Theme</p>
+            <p class="text-muted-foreground text-xs">Pick a UI theme.</p>
+        </div>
+        <div>
+            <ThemeSwitcher />
+        </div>
     </div>
 
     <div class="mt-4 flex flex-col gap-2 md:flex-row">
